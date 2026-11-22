@@ -482,7 +482,10 @@ function detailSheet(k){
     rows=as.map(a=>{
       const h=hours(a);
       const sub=hhmm(a.startedAt)+(a.endedAt?" to "+hhmm(a.endedAt)+" · "+h.toFixed(1)+"h":" · still running");
-      return row(dmy(a.startedAt),esc(sub+(a.note?" · "+a.note:"")),a.scored?esc(score(a).verdict.replace(" likely","")):"not scored",a.scored?"":"wait");
+      const x=attackExtras(a);
+      const extra="<br>Meds: "+(x.doses.length?esc(x.doses.map(d=>hhmm(d.at)+" "+d.drug).join(" · ")):"none logged")+
+        "<br>BP: "+(x.bp.length?esc(x.bp.map(r=>hhmm(r.at)+" "+r.sys+"/"+r.dia+(r.pulse?" p"+r.pulse:"")).join(" · ")):"none logged");
+      return row(dmy(a.startedAt),esc(sub+(a.note?" · "+a.note:""))+extra,a.scored?esc(score(a).verdict.replace(" likely","")):"not scored",a.scored?"":"wait");
     }).join("");
   }else if(k==="signals"){
     title="Warning signs";
