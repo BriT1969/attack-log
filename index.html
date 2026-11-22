@@ -706,6 +706,15 @@ function saveScore(a){
   shut();toast("Saved · "+v.verdict+" (ID "+v.id+", POUND "+v.pound+")");
 }
 
+// doses and BP readings that belong to an attack: linked by id, or inside the
+// window from 1h before it started to when it ended (or now, if still running)
+function attackExtras(a){
+  const from=a.startedAt-36e5,to=a.endedAt||Date.now();
+  const inWin=x=>x.at>=from&&x.at<=to;
+  const doses=live("doses").filter(d=>d.attackId===a.id||inWin(d)).sort((x,y)=>x.at-y.at);
+  const bp=live("readings").filter(inWin).sort((x,y)=>x.at-y.at);
+  return{doses:doses,bp:bp};
+}
 function historySheet(){
   const all=live("attacks").sort((x,y)=>y.startedAt-x.startedAt);
   openSheet('<div class="sheet-h"><h3>All attacks</h3><button class="lnk" id="x">Close</button></div>'+
@@ -718,6 +727,9 @@ function historySheet(){
         (a.type?" · "+esc(a.type):"")+(a.side&&a.side.length?" · "+esc(a.side.join(", ")):"")+
         (a.aura?" · aura":"")+"</div>"+
         (a.note?'<div class="ev-d">'+esc(a.note)+"</div>":"")+
+        (()=>{const x=attackExtras(a);
+          return '<div class="ev-d">Meds: '+(x.doses.length?esc(x.doses.map(d=>hhmm(d.at)+" "+d.drug).join(" · ")):"none logged")+"</div>"+
+            '<div class="ev-d">BP: '+(x.bp.length?esc(x.bp.map(r=>hhmm(r.at)+" "+r.sys+"/"+r.dia+(r.pulse?" p"+r.pulse:"")).join(" · ")):"none logged")+"</div>"})()+
         '<div style="margin-top:8px"><button class="lnk" data-score="'+a.id+'">'+(a.scored?"Edit":"Score it")+"</button></div></div>";
     }).join(""):'<div class="empty"><b>Nothing yet</b><span>Attacks appear here once you close one.</span></div>'));
   document.getElementById("x").onclick=shut;
