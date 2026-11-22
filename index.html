@@ -249,7 +249,6 @@ textarea{min-height:76px;resize:vertical}
 const MEDS=["Paracetamol","Paracetamol+Caffeine+Aspirin","Ibuprofen","Naproxen","Naratriptan","Sumatriptan","Sudafed","Lemsip","Other"];
 const CLASS={Naratriptan:"triptan",Sumatriptan:"triptan","Paracetamol+Caffeine+Aspirin":"combo",Lemsip:"combo",Paracetamol:"simple",Ibuprofen:"simple",Naproxen:"simple"};
 const SIGNS=["Yawning","Unusual tiredness","Neck / shoulder","Food craving","Mood change","Passing water often","Light sensitivity","Other"];
-const TYPES=["Migraine","Tension","Hypnic","Postdrome","Other"];
 const SIDES=["Right","Left","Both","Back of head"];
 const SYMPTOMS=[["throbbing","Throbbing"],["oneSided","One-sided"],["nausea","Nausea or sickness"],["lightSound","Light or sound hurt"],["stopped","Stopped what I was doing"],["worseMove","Worse on movement"]];
 const AUTO=[["eye","Watery or red eye"],["nose","Blocked or running nose"],["lid","Drooping or puffy lid"]];
@@ -424,7 +423,7 @@ function renderFeed(){
   let evs=[];
   live("attacks").forEach(a=>{
     evs.push({at:a.startedAt,tag:"att",t:"Attack started",d:a.note||""});
-    if(a.endedAt)evs.push({at:a.endedAt,tag:"att",t:"Attack ended",d:(a.type||"")+(hours(a)?" · "+hours(a).toFixed(1)+"h":"")});
+    if(a.endedAt)evs.push({at:a.endedAt,tag:"att",t:"Attack ended",d:(a.scored?score(a).verdict:"")+(hours(a)?(a.scored?" · ":"")+hours(a).toFixed(1)+"h":"")});
   });
   live("signals").forEach(s=>evs.push({at:s.at,tag:"sig",t:"Warning signs",d:(s.kinds||[]).join(", ")}));
   live("doses").forEach(d=>evs.push({at:d.at,tag:"med",t:d.drug,d:""}));
@@ -677,7 +676,6 @@ function scoreFields(a){
       '<div><label for="t0">Started</label><input type="datetime-local" id="t0" value="'+toLocal(a.startedAt)+'"></div>'+
       '<div><label for="t1">Ended</label><input type="datetime-local" id="t1" value="'+toLocal(a.endedAt||Date.now())+'"></div>'+
     "</div></div>"+
-    '<div class="field"><label>What was it</label>'+chipRow("type",TYPES,false)+"</div>"+
     '<div class="field"><label>Where</label>'+chipRow("side",SIDES,true)+"</div>"+
     '<div class="field"><label>At any point during it</label>'+chipRow("sym",SYMPTOMS.map(s=>s[1]),true)+"</div>"+
     '<div class="field"><label>Aura</label>'+chipRow("aura",["Visual disturbance"],true)+"</div>"+
@@ -688,7 +686,7 @@ function scoreFields(a){
 function saveScore(a){
   const sym={};SYMPTOMS.forEach(([k,l])=>{sym[k]=picked("sym").includes(l)});
   const au={};AUTO.forEach(([k,l])=>{au[k]=picked("auto").includes(l)});
-  a.type=one("type")||a.type||"Other";
+  a.type=a.type||""; // no longer asked: the app works the type out from the answers
   a.side=picked("side");
   a.symptoms=sym;
   a.aura=picked("aura").length>0;
@@ -727,7 +725,7 @@ function historySheet(){
       return '<div class="card"><div class="card-h"><b>'+dmy(a.startedAt)+", "+hhmm(a.startedAt)+"</b>"+
         '<span class="verdict '+cls+'">'+v.verdict+"</span></div>"+
         '<div class="ev-d">'+(a.endedAt?(hours(a)||0).toFixed(1)+"h":"still running")+
-        (a.type?" · "+esc(a.type):"")+(a.side&&a.side.length?" · "+esc(a.side.join(", ")):"")+
+        (a.side&&a.side.length?" · "+esc(a.side.join(", ")):"")+
         (a.aura?" · aura":"")+"</div>"+
         (a.note?'<div class="ev-d">'+esc(a.note)+"</div>":"")+
         (()=>{const x=attackExtras(a);
