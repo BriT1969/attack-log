@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14110e">
+<title>Attack Log</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single column, action-first. One dominant control at the top,
+   quick actions beneath it, the day's timeline below that.
+   Dark-only and blue-free on purpose: this gets used at 2am mid-attack,
+   and blue-white is the wavelength that provokes photophobia hardest. */
+:root{
+  --bg:#14110e;
+  --surface:#1d1915;
+  --surface-2:#272019;
+  --line:#3a3027;
+  --line-soft:#2c251e;
+  --fg:#ece2d4;
+  --fg-dim:#a3948211;
+  --dim:#a39482;
+  --dim-2:#7d7064;
+  --amber:#e0a04a;
+  --amber-ink:#2a1d0a;
+  --ember:#d2664a;
+  --ember-dim:#4a2318;
+  --sage:#8aa368;
+  --font:"Barlow",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--fg);font-family:var(--font);
+  font-size:16px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:0 40px;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:560px;margin:0 auto}
+
+/* header */
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding-block:18px 14px;border-bottom:1px solid var(--line-soft);margin-bottom:18px}
+.brand{font-weight:600;font-size:18px;letter-spacing:.01em}
+.brand span{color:var(--dim-2);font-weight:400}
+.sync{font-family:var(--mono);font-size:11px;color:var(--dim-2);display:flex;align-items:center;
+  gap:6px;min-width:0;text-align:right;line-height:1.3}
+.sync span:last-child{overflow-wrap:anywhere}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim-2);flex:none}
+.dot.ok{background:var(--sage)}
+.dot.wait{background:var(--amber)}
+
+/* the main control */
+.hero{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;margin-bottom:14px}
+.hero.live{border-color:var(--ember);background:linear-gradient(180deg,var(--ember-dim),var(--surface) 70%)}
+.hero-body{padding:20px 18px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--dim-2);margin-bottom:10px}
+.hero.live .eyebrow{color:var(--ember)}
+.hero-head{font-size:24px;font-weight:600;line-height:1.2;text-wrap:balance;margin:0 0 4px}
+.elapsed{font-family:var(--mono);font-size:40px;font-weight:500;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1.05;margin:2px 0 2px}
+.hero-sub{color:var(--dim);font-size:14px}
+
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+.big{display:block;width:100%;padding:17px 16px;border:none;border-radius:11px;
+  font-size:17px;font-weight:600;letter-spacing:.01em;text-align:center;
+  background:var(--amber);color:var(--amber-ink);margin-top:16px;
+  transition:filter .12s}
+.big:active{filter:brightness(.88)}
+.big.stop{background:var(--ember);color:#1a0d08}
+.big:focus-visible,.q:focus-visible,.chip:focus-visible,.lnk:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+/* quick actions */
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:22px}
+.q{padding:13px 8px;border:1px solid var(--line);border-radius:11px;background:var(--surface);
+  font-size:13px;font-weight:500;text-align:center;line-height:1.25;color:var(--fg)}
+.q:active{background:var(--surface-2)}
+.q small{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--dim-2);margin-top:3px}
+
+h2{font-size:12px;font-family:var(--mono);letter-spacing:.11em;text-transform:uppercase;
+  color:var(--dim-2);font-weight:500;margin:0 0 10px}
+section{margin-bottom:26px}
+
+/* timeline */
+.feed{display:flex;flex-direction:column;gap:1px;background:var(--line-soft);
+  border:1px solid var(--line-soft);border-radius:11px;overflow:hidden}
+.ev{display:flex;gap:12px;padding:11px 13px;background:var(--surface);align-items:flex-start}
+.ev time{font-family:var(--mono);font-size:12px;color:var(--dim-2);flex:none;width:40px;
+  font-variant-numeric:tabular-nums;padding-top:2px}
+.ev-main{min-width:0;flex:1}
+.ev-t{font-size:14px;font-weight:500}
+.ev-d{font-size:13px;color:var(--dim);margin-top:1px;overflow-wrap:break-word}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  padding:2px 6px;border-radius:4px;background:var(--surface-2);color:var(--dim);flex:none}
+.tag.att{background:var(--ember-dim);color:var(--ember)}
+.tag.sig{background:#3a2c12;color:var(--amber)}
+.tag.med{background:#2b2a1c;color:var(--sage)}
+
+.empty{border:1px dashed var(--line);border-radius:11px;padding:22px 16px;text-align:center;color:var(--dim)}
+.empty b{display:block;color:var(--fg);font-weight:500;margin-bottom:3px;font-size:15px}
+.empty span{font-size:13px}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat{border:1px solid var(--line-soft);border-radius:10px;padding:11px 12px;background:var(--surface)}
+.stat .n{font-family:var(--mono);font-size:21px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .l{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.3}
+.stat.warn{border-color:var(--amber)}
+.stat.warn .n{color:var(--amber)}
+
+/* review */
+.card{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:14px;margin-bottom:8px}
+.card-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:8px}
+.card-h b{font-weight:600;font-size:15px}
+.card-h em{font-family:var(--mono);font-style:normal;font-size:12px;color:var(--dim-2)}
+.lnk{font-size:14px;font-weight:500;color:var(--amber);text-decoration:underline;
+  text-underline-offset:3px;padding:2px 0}
+.verdict{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 7px;border-radius:4px;background:var(--surface-2);color:var(--dim)}
+.verdict.mig{background:var(--ember-dim);color:var(--ember)}
+.verdict.ten{background:#2a2a20;color:var(--sage)}
+
+/* sheet / overlay */
+.sheet{position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:calc(16px + env(safe-area-inset-top,0px));
+  padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:4px}
+.sheet-h h3{font-size:21px;font-weight:600;margin:0}
+.sheet-note{color:var(--dim);font-size:14px;margin:0 0 20px}
+.field{margin-bottom:18px}
+.field > label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--dim-2);margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:9px 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+  font-size:14px;color:var(--fg);line-height:1.2}
+.chip[aria-pressed="true"]{background:var(--amber);color:var(--amber-ink);border-color:var(--amber);font-weight:500}
+input[type=text],input[type=number],input[type=datetime-local],textarea,select{
+  width:100%;padding:11px 12px;background:var(--surface);color:var(--fg);
+  border:1px solid var(--line);border-radius:9px;font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--amber);outline-offset:-1px;border-color:var(--amber)}
+textarea{min-height:76px;resize:vertical}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row3 label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+.actions{display:flex;gap:9px;margin-top:24px;flex-wrap:wrap}
+.actions .big{margin-top:0;flex:1 1 180px}
+.ghost{background:none;border:1px solid var(--line);color:var(--fg)}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:60;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:999px;
+  padding:10px 18px;font-size:14px;display:flex;gap:14px;align-items:center;
+  box-shadow:0 6px 26px rgba(0,0,0,.6);max-width:calc(100vw - 32px)}
+.toast button{color:var(--amber);font-weight:600;font-size:14px;white-space:nowrap}
+
+.foot{border-top:1px solid var(--line-soft);padding-top:16px;display:flex;
+  gap:16px;flex-wrap:wrap;font-size:13px;color:var(--dim-2)}
+/* chart: slots 2 and 3 of the validated categorical set, stepped for this
+   dark surface — orange for systolic, aqua for diastolic */
+:root{--sys:#d95926;--dia:#199e70;--grid:#2e2721;--ref:#5c4f44}
+.chart{width:100%;height:auto;display:block;touch-action:pan-y}
+.chart text{font-family:var(--mono);fill:var(--dim-2)}
+.readout{font-family:var(--mono);font-size:12px;color:var(--dim);min-height:18px;
+  margin:2px 0 6px;font-variant-numeric:tabular-nums}
+.key{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--dim);margin-top:8px}
+.key i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.ctitle{font-size:13px;font-weight:500;color:var(--fg);margin:18px 0 2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  html,body{margin:0}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">Attack Log <span>· Lee</span></div>
+    <div class="sync"><span class="dot" id="dot"></span><span id="syncTxt">starting up</span></div>
+  </div>
+
+  <div class="hero" id="hero">
+    <div class="hero-body">
+      <div class="eyebrow" id="heroEyebrow">Status</div>
+      <div id="heroMain"><p class="hero-head">Loading your log…</p></div>
+      <button class="big" id="mainBtn" hidden></button>
+    </div>
+  </div>
+
+  <div class="quick">
+    <button class="q" id="btnSignal">Warning signs<small>premonitory</small></button>
+    <button class="q" id="btnMed">Took something<small>dose</small></button>
+    <button class="q" id="btnBp">Blood pressure<small>reading</small></button>
+  </div>
+
+  <section id="reviewWrap" hidden>
+    <h2>Needs scoring</h2>
+    <div id="reviewList"></div>
+  </section>
+
+  <section>
+    <h2 id="feedHead">Today</h2>
+    <div id="feed"></div>
+  </section>
+
+  <section>
+    <h2>Last 30 days</h2>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <div class="foot">
+    <button class="lnk" id="btnHistory">All attacks</button>
+    <button class="lnk" id="btnChart">BP chart</button>
+    <button class="lnk" id="btnExport">Export</button>
+    <button class="lnk" id="btnSetup">Settings</button>
+    <span id="outboxNote" style="margin-left:auto"></span>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast" id="toast" hidden><span id="toastTxt"></span><button id="toastBtn" hidden>Undo</button></div>
+
+<script>
+"use strict";
+const MEDS=["Paracetamol","Paracetamol+Caffeine+Aspirin","Ibuprofen","Naproxen","Naratriptan","Sumatriptan","Sudafed","Lemsip","Other"];
+const CLASS={Naratriptan:"triptan",Sumatriptan:"triptan","Paracetamol+Caffeine+Aspirin":"combo",Lemsip:"combo",Paracetamol:"simple",Ibuprofen:"simple",Naproxen:"simple"};
+const SIGNS=["Yawning","Unusual tiredness","Neck / shoulder","Food craving","Mood change","Passing water often","Light sensitivity","Other"];
+const TYPES=["Migraine","Tension","Hypnic","Postdrome","Other"];
+const SIDES=["Right","Left","Both","Back of head"];
+const SYMPTOMS=[["throbbing","Throbbing"],["oneSided","One-sided"],["nausea","Nausea or sickness"],["lightSound","Light or sound hurt"],["stopped","Stopped what I was doing"],["worseMove","Worse on movement"]];
+const AUTO=[["eye","Watery or red eye"],["nose","Blocked or running nose"],["lid","Drooping or puffy lid"]];
+const KEY="attacklog.v1";
+const CFG="attacklog.cfg";
+const COLLS=["attacks","signals","doses","readings"];
+
+let S={attacks:{},signals:{},doses:{},readings:{}};
+let outbox=[],undoFn=null,tick=null;
+
+/* ---------- storage: local truth, posted to your Google Sheet ---------- */
+function cfg(){try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch(e){return{}}}
+function setCfg(o){try{localStorage.setItem(CFG,JSON.stringify(o))}catch(e){}}
+function loadLocal(){try{const r=localStorage.getItem(KEY);if(r){const p=JSON.parse(r);
+  COLLS.forEach(c=>{if(p[c])S[c]=p[c]});if(Array.isArray(p._outbox))outbox=p._outbox}}catch(e){}}
+function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(Object.assign({},S,{_outbox:outbox})))}catch(e){}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function live(coll){return Object.values(S[coll]).filter(r=>!r.deleted)}
+
+function put(coll,rec){rec.rev=Date.now();S[coll][rec.id]=rec;saveLocal();render();return rec}
+function drop(coll,id){const r=S[coll][id];if(!r)return;r.deleted=true;r.rev=Date.now();
+  outbox=outbox.filter(e=>e.localRef!==id);saveLocal();render();}
+
+/* every posted row is one event; the outbox holds what has not reached the Sheet */
+function emit(ev,localRef){
+  ev.eventId=uid();ev.localRef=localRef||null;
+  outbox.push(ev);saveLocal();render();send();
+}
+async function send(){
+  const c=cfg();
+  if(!c.url){setSync("","not connected — open Settings");paintOutbox();return}
+  if(!outbox.length){setSync("ok","in your Sheet");paintOutbox();return}
+  if(send._busy)return; send._busy=true;
+  setSync("wait","sending "+outbox.length);
+  const batch=outbox.slice(0,25);
+  try{
+    // plain-text body keeps this a simple request, so no CORS preflight
+    const res=await fetch(c.url,{method:"POST",body:JSON.stringify({token:c.token||"",events:batch})});
+    const out=await res.json();
+    if(out&&out.ok){
+      const done=new Set(out.ids||batch.map(e=>e.eventId));
+      outbox=outbox.filter(e=>!done.has(e.eventId));
+      saveLocal();
+      setSync(outbox.length?"wait":"ok",outbox.length?outbox.length+" waiting":"in your Sheet");
+    }else{
+      setSync("",(out&&out.error)||"the Sheet refused it");
+    }
+  }catch(err){
+    setSync("",navigator.onLine?"cannot reach the Sheet":"offline — "+outbox.length+" waiting");
+  }
+  send._busy=false;paintOutbox();
+}
+/* rebuild local state from the Sheet, so any device shows the same history */
+const C={ts:0,event:3,attackId:4,started:5,ended:6,type:7,side:8,aura:9,
+  throbbing:10,oneSided:11,nausea:12,lightSound:13,stopped:14,worseMove:15,
+  eye:16,nose:17,autoSide:18,signs:19,drug:20,cls:21,sys:22,dia:23,pulse:24,dizzy:25,note:26};
+const Y=v=>String(v||"").trim()==="Y";
+const T=v=>v?Date.parse(v):null;
+function rebuild(rows){
+  const N={attacks:{},signals:{},doses:{},readings:{}};
+  rows.forEach((r,i)=>{
+    const at=T(r[C.ts]); if(!at)return;
+    const ev=String(r[C.event]||"");
+    if(ev==="attack start"){
+      const id=String(r[C.attackId]||"as"+i);
+      N.attacks[id]=Object.assign({id:id,startedAt:at,endedAt:null,scored:false},N.attacks[id]||{});
+      N.attacks[id].startedAt=at;
+    }else if(ev.indexOf("attack end")===0||ev.indexOf("attack ended")===0){
+      const id=String(r[C.attackId]||"ae"+i);
+      const a=N.attacks[id]||(N.attacks[id]={id:id,startedAt:T(r[C.started])||at});
+      a.startedAt=T(r[C.started])||a.startedAt;
+      a.endedAt=T(r[C.ended])||at;
+      if(ev==="attack end"){
+        a.type=r[C.type]||"";a.side=String(r[C.side]||"").split(" / ").filter(Boolean);
+        a.aura=Y(r[C.aura]);
+        a.symptoms={throbbing:Y(r[C.throbbing]),oneSided:Y(r[C.oneSided]),nausea:Y(r[C.nausea]),
+          lightSound:Y(r[C.lightSound]),stopped:Y(r[C.stopped]),worseMove:Y(r[C.worseMove])};
+        a.autonomic={eye:Y(r[C.eye]),nose:Y(r[C.nose])};
+        a.autonomicSide=r[C.autoSide]||"";a.note=r[C.note]||"";a.scored=true;
+      }
+    }else if(ev==="signal"){
+      N.signals["s"+i]={id:"s"+i,at:at,kinds:String(r[C.signs]||"").split(" / ").filter(Boolean),note:r[C.note]||""};
+    }else if(ev==="dose"){
+      N.doses["d"+i]={id:"d"+i,at:at,drug:r[C.drug]||"",attackId:r[C.attackId]||null};
+    }else if(ev==="reading"){
+      N.readings["r"+i]={id:"r"+i,at:at,sys:+r[C.sys]||0,dia:+r[C.dia]||0,
+        pulse:+r[C.pulse]||null,orthostatic:Y(r[C.dizzy]),note:r[C.note]||""};
+    }
+  });
+  // keep anything still waiting to be sent
+  const keep=new Set(outbox.map(e=>e.localRef).filter(Boolean));
+  COLLS.forEach(c=>{Object.keys(S[c]).forEach(id=>{if(keep.has(id))N[c][id]=S[c][id]})});
+  S=N;saveLocal();
+}
+async function pullAll(){
+  const c=cfg(); if(!c.url)return null;
+  try{
+    const res=await fetch(c.url,{method:"POST",body:JSON.stringify({token:c.token||"",action:"read"})});
+    const out=await res.json();
+    if(!out||!out.ok)return (out&&out.error)||"refused";
+    rebuild(out.rows||[]);render();
+    return null;
+  }catch(e){return "cannot reach the Sheet"}
+}
+function paintOutbox(){
+  const n=document.getElementById("outboxNote");
+  n.textContent=outbox.length?outbox.length+" row"+(outbox.length>1?"s":"")+" not sent yet":"";
+  n.style.color="var(--amber)";
+}
+function setSync(cls,txt){const d=document.getElementById("dot");
+  d.className="dot"+(cls?" "+cls:"");document.getElementById("syncTxt").textContent=txt}
+
+/* ---------- derived ---------- */
+const DAY=864e5;
+function dayKey(ms){const d=new Date(ms);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function hhmm(ms){const d=new Date(ms);return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+function dmy(ms){const d=new Date(ms);return d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+function openAttack(){return live("attacks").find(a=>!a.endedAt)||null}
+function hours(a){return a.endedAt?(a.endedAt-a.startedAt)/36e5:null}
+
+function score(a){
+  if(!a.scored)return{id:null,pound:null,verdict:"not scored"};
+  const s=a.symptoms||{},h=hours(a);
+  const idm=(s.nausea?1:0)+(s.lightSound?1:0)+(s.stopped?1:0);
+  const pnd=(s.throbbing?1:0)+(h>=4&&h<=72?1:0)+(s.oneSided?1:0)+(s.nausea?1:0)+(s.stopped?1:0);
+  let v="Unclear";
+  if(a.aura)v="Migraine likely";
+  else if(idm>=2||pnd>=4)v="Migraine likely";
+  else if(idm===0&&pnd<=1&&!s.worseMove)v="Tension-type likely";
+  return{id:idm,pound:pnd,verdict:v};
+}
+function windows(){
+  const now=Date.now(),from=now-30*DAY,set={triptan:new Set(),combo:new Set(),simple:new Set(),any:new Set()};
+  live("doses").filter(d=>d.at>=from).forEach(d=>{
+    const k=dayKey(d.at);set.any.add(k);
+    const c=CLASS[d.drug];if(c)set[c].add(k);
+  });
+  const attackDays=new Set(live("attacks").filter(a=>a.startedAt>=from).map(a=>dayKey(a.startedAt)));
+  const sigs=live("signals").filter(s=>s.at>=from);
+  let hit=0;
+  sigs.forEach(s=>{if(live("attacks").some(a=>a.startedAt>s.at&&a.startedAt-s.at<=DAY))hit++});
+  return{triptan:set.triptan.size,combo:set.combo.size,simple:set.simple.size,any:set.any.size,
+    attackDays:attackDays.size,signals:sigs.length,hit:hit};
+}
+
+/* ---------- render ---------- */
+function render(){
+  const a=openAttack();
+  const hero=document.getElementById("hero"),main=document.getElementById("heroMain"),
+        btn=document.getElementById("mainBtn"),eye=document.getElementById("heroEyebrow");
+  btn.hidden=false;
+  if(a){
+    hero.classList.add("live");eye.textContent="Attack running";
+    const mins=Math.round((Date.now()-a.startedAt)/6e4);
+    main.innerHTML='<div class="elapsed">'+Math.floor(mins/60)+"h "+String(mins%60).padStart(2,"0")+'m</div>'+
+      '<div class="hero-sub">Started '+hhmm(a.startedAt)+(dayKey(a.startedAt)!==dayKey(Date.now())?" on "+dmy(a.startedAt):"")+"</div>";
+    btn.textContent="It's over";btn.className="big stop";btn.onclick=()=>closeSheet(a.id);
+    if(!tick)tick=setInterval(()=>{if(openAttack())render()},30000);
+  }else{
+    hero.classList.remove("live");eye.textContent="Status";
+    const last=live("attacks").filter(x=>x.endedAt).sort((x,y)=>y.endedAt-x.endedAt)[0];
+    main.innerHTML='<p class="hero-head">No attack running</p><div class="hero-sub">'+
+      (last?"Last one ended "+dmy(last.endedAt)+" at "+hhmm(last.endedAt):"Tap below the moment one starts. Everything else can wait.")+"</div>";
+    btn.textContent="Attack starting";btn.className="big";btn.onclick=startAttack;
+    if(tick){clearInterval(tick);tick=null}
+  }
+  renderFeed();renderReview();renderStats();
+}
+
+function renderFeed(){
+  const today=dayKey(Date.now());
+  let evs=[];
+  live("attacks").forEach(a=>{
+    evs.push({at:a.startedAt,tag:"att",t:"Attack started",d:a.note||""});
+    if(a.endedAt)evs.push({at:a.endedAt,tag:"att",t:"Attack ended",d:(a.type||"")+(hours(a)?" · "+hours(a).toFixed(1)+"h":"")});
+  });
+  live("signals").forEach(s=>evs.push({at:s.at,tag:"sig",t:"Warning signs",d:(s.kinds||[]).join(", ")}));
+  live("doses").forEach(d=>evs.push({at:d.at,tag:"med",t:d.drug,d:""}));
+  live("readings").forEach(r=>evs.push({at:r.at,tag:"",t:r.sys+"/"+r.dia,d:"pulse "+r.pulse+(r.orthostatic?" · dizzy on standing":"")+(r.note?" · "+r.note:"")}));
+  const mine=evs.filter(e=>dayKey(e.at)===today).sort((x,y)=>y.at-x.at);
+  const f=document.getElementById("feed");
+  if(!mine.length){
+    f.outerHTML='<div class="empty" id="feed"><b>Nothing logged today</b><span>Attacks, warning signs, doses and BP readings all show up here.</span></div>';
+    return;
+  }
+  f.outerHTML='<div class="feed" id="feed">'+mine.map(e=>
+    '<div class="ev"><time>'+hhmm(e.at)+"</time>"+
+    '<div class="ev-main"><div class="ev-t">'+esc(e.t)+"</div>"+
+    (e.d?'<div class="ev-d">'+esc(e.d)+"</div>":"")+"</div>"+
+    (e.tag?'<span class="tag '+e.tag+'">'+(e.tag==="att"?"attack":e.tag==="sig"?"signal":"med")+"</span>":"")+
+    "</div>").join("")+"</div>";
+}
+
+function renderReview(){
+  const un=live("attacks").filter(a=>a.endedAt&&!a.scored).sort((x,y)=>y.endedAt-x.endedAt);
+  document.getElementById("reviewWrap").hidden=!un.length;
+  document.getElementById("reviewList").innerHTML=un.map(a=>
+    '<div class="card"><div class="card-h"><b>'+dmy(a.startedAt)+", "+hhmm(a.startedAt)+"</b>"+
+    "<em>"+(hours(a)||0).toFixed(1)+"h</em></div>"+
+    '<button class="lnk" data-score="'+a.id+'">Score it</button></div>').join("");
+  document.querySelectorAll("[data-score]").forEach(b=>b.onclick=()=>scoreSheet(b.dataset.score));
+}
+
+function renderStats(){
+  const w=windows();
+  const cell=(n,l,warn)=>'<div class="stat'+(warn?" warn":"")+'"><div class="n">'+n+'</div><div class="l">'+l+"</div></div>";
+  document.getElementById("stats").innerHTML=
+    cell(w.attackDays,"attack days")+
+    cell(w.any,"days on any acute med")+
+    cell(w.triptan+" <span style='font-size:13px;color:var(--dim-2)'>/ 10</span>","triptan days",w.triptan>=10)+
+    cell(w.combo+" <span style='font-size:13px;color:var(--dim-2)'>/ 10</span>","combination analgesic days",w.combo>=10)+
+    cell(w.simple+" <span style='font-size:13px;color:var(--dim-2)'>/ 15</span>","simple analgesic days",w.simple>=15)+
+    cell(w.signals?w.hit+"/"+w.signals:"—","warning signs followed by an attack within 24h");
+}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+/* ---------- toast ---------- */
+function toast(msg,undo){
+  const t=document.getElementById("toast"),b=document.getElementById("toastBtn");
+  document.getElementById("toastTxt").textContent=msg;t.hidden=false;
+  undoFn=undo||null;b.hidden=!undo;
+  clearTimeout(toast._t);toast._t=setTimeout(()=>{t.hidden=true;undoFn=null},6000);
+}
+document.getElementById("toastBtn").onclick=()=>{if(undoFn)undoFn();document.getElementById("toast").hidden=true;undoFn=null};
+
+/* ---------- actions ---------- */
+function startAttack(){
+  const a=put("attacks",{id:uid(),startedAt:Date.now(),endedAt:null,scored:false});
+  emit({event:"attack start",at:a.startedAt,attackId:a.id},a.id);
+  toast("Attack logged at "+hhmm(a.startedAt),()=>drop("attacks",a.id));
+}
+
+const sheet=document.getElementById("sheet");
+function openSheet(html){sheet.innerHTML=html;sheet.hidden=false;document.body.style.overflow="hidden";sheet.scrollTop=0}
+function shut(){sheet.hidden=true;sheet.innerHTML="";document.body.style.overflow=""}
+function chipRow(name,items,multi){
+  return '<div class="chips" data-chips="'+name+'" data-multi="'+(multi?1:0)+'">'+
+    items.map(i=>'<button type="button" class="chip" aria-pressed="false" data-v="'+esc(i)+'">'+esc(i)+"</button>").join("")+"</div>";
+}
+sheet.addEventListener("click",e=>{
+  const c=e.target.closest(".chip");if(!c)return;
+  const grp=c.closest("[data-chips]");
+  if(grp.dataset.multi!=="1")grp.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed","false"));
+  c.setAttribute("aria-pressed",c.getAttribute("aria-pressed")==="true"?"false":"true");
+});
+function picked(name){return[...sheet.querySelectorAll('[data-chips="'+name+'"] .chip[aria-pressed="true"]')].map(b=>b.dataset.v)}
+function one(name){return picked(name)[0]||null}
+
+function signalSheet(){
+  openSheet('<div class="sheet-h"><h3>Warning signs</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Logged at '+hhmm(Date.now())+". The point is the gap between this and the pain, so log it when you notice it.</p>"+
+    '<div class="field"><label>What are you noticing</label>'+chipRow("signs",SIGNS,true)+"</div>"+
+    '<div class="field"><label>Note</label><input type="text" id="sn" placeholder="optional"></div>'+
+    '<div class="actions"><button class="big" id="go">Log it</button></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("go").onclick=()=>{
+    const k=picked("signs");if(!k.length){toast("Pick at least one");return}
+    const r=put("signals",{id:uid(),at:Date.now(),kinds:k,note:document.getElementById("sn").value.trim()});
+    emit({event:"signal",at:r.at,signs:k.join(" / "),note:r.note},r.id);
+    shut();toast("Warning signs logged",()=>drop("signals",r.id));
+  };
+}
+function medSheet(){
+  openSheet('<div class="sheet-h"><h3>Took something</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Counts toward the 30-day medication windows.</p>'+
+    '<div class="field"><label>What</label>'+chipRow("drug",MEDS,false)+"</div>"+
+    '<div class="actions"><button class="big" id="go">Log it</button></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("go").onclick=()=>{
+    const d=one("drug");if(!d){toast("Pick one");return}
+    const a=openAttack();
+    const r=put("doses",{id:uid(),at:Date.now(),drug:d,attackId:a?a.id:null});
+    emit({event:"dose",at:r.at,drug:d,drugClass:CLASS[d]||"",attackId:r.attackId||""},r.id);
+    shut();toast(d+" logged",()=>drop("doses",r.id));
+  };
+}
+function bpSheet(){
+  openSheet('<div class="sheet-h"><h3>Blood pressure</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Sit still for a few minutes first, arm supported at heart height.</p>'+
+    '<div class="field"><div class="row3">'+
+      '<div><label for="sys">Systolic</label><input type="number" inputmode="numeric" id="sys"></div>'+
+      '<div><label for="dia">Diastolic</label><input type="number" inputmode="numeric" id="dia"></div>'+
+      '<div><label for="pul">Pulse</label><input type="number" inputmode="numeric" id="pul"></div>'+
+    "</div></div>"+
+    '<div class="field"><label>Anything else</label>'+chipRow("ortho",["Dizzy on standing"],true)+"</div>"+
+    '<div class="field"><label>Note</label><input type="text" id="bn" placeholder="optional"></div>'+
+    '<div class="actions"><button class="big" id="go">Log it</button></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("go").onclick=()=>{
+    const sys=+document.getElementById("sys").value,dia=+document.getElementById("dia").value,pul=+document.getElementById("pul").value;
+    if(!sys||!dia){toast("Need systolic and diastolic");return}
+    const r=put("readings",{id:uid(),at:Date.now(),sys:sys,dia:dia,pulse:pul||null,
+      orthostatic:picked("ortho").length>0,note:document.getElementById("bn").value.trim()});
+    emit({event:"reading",at:r.at,sys:sys,dia:dia,pulse:r.pulse||"",orthostatic:r.orthostatic,note:r.note},r.id);
+    shut();toast(sys+"/"+dia+" logged",()=>drop("readings",r.id));
+  };
+}
+function closeSheet(id){
+  const a=S.attacks[id];const end=Date.now();
+  const h=((end-a.startedAt)/36e5).toFixed(1);
+  openSheet('<div class="sheet-h"><h3>Attack over</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Ran '+h+" hours, from "+hhmm(a.startedAt)+". Answer these about the <b>whole</b> attack, not how it feels now.</p>"+
+    scoreFields(a)+
+    '<div class="actions"><button class="big" id="go">Save</button><button class="big ghost" id="later">End it, score later</button></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("later").onclick=()=>{a.endedAt=end;put("attacks",a);
+    emit({event:"attack ended, not yet scored",at:end,attackId:a.id,started:a.startedAt,ended:end},a.id);
+    shut();toast("Attack closed. It's in Needs scoring.")};
+  document.getElementById("go").onclick=()=>{a.endedAt=end;saveScore(a)};
+}
+function scoreSheet(id){
+  const a=S.attacks[id];
+  openSheet('<div class="sheet-h"><h3>Score this attack</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">'+dmy(a.startedAt)+", "+hhmm(a.startedAt)+" · ran "+(hours(a)||0).toFixed(1)+" hours. Answer about the <b>whole</b> attack.</p>"+
+    scoreFields(a)+
+    '<div class="actions"><button class="big" id="go">Save</button></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("go").onclick=()=>saveScore(a);
+}
+function toLocal(ms){const d=new Date(ms-d0(ms));return d.toISOString().slice(0,16)}
+function d0(ms){return new Date(ms).getTimezoneOffset()*6e4}
+function fromLocal(v){return v?new Date(v).getTime():null}
+function scoreFields(a){
+  return '<div class="field"><label>When it ran</label><div class="row3" style="grid-template-columns:1fr 1fr">'+
+      '<div><label for="t0">Started</label><input type="datetime-local" id="t0" value="'+toLocal(a.startedAt)+'"></div>'+
+      '<div><label for="t1">Ended</label><input type="datetime-local" id="t1" value="'+toLocal(a.endedAt||Date.now())+'"></div>'+
+    "</div></div>"+
+    '<div class="field"><label>What was it</label>'+chipRow("type",TYPES,false)+"</div>"+
+    '<div class="field"><label>Where</label>'+chipRow("side",SIDES,true)+"</div>"+
+    '<div class="field"><label>At any point during it</label>'+chipRow("sym",SYMPTOMS.map(s=>s[1]),true)+"</div>"+
+    '<div class="field"><label>Aura</label>'+chipRow("aura",["Visual disturbance"],true)+"</div>"+
+    '<div class="field"><label>Watery eye or blocked nose</label>'+chipRow("auto",AUTO.map(x=>x[1]),true)+
+      '<div style="margin-top:7px">'+chipRow("autoside",["Same side as pain","Both sides"],false)+"</div></div>"+
+    '<div class="field"><label>Notes</label><textarea id="nt" placeholder="optional">'+esc(a.note||"")+"</textarea></div>";
+}
+function saveScore(a){
+  const sym={};SYMPTOMS.forEach(([k,l])=>{sym[k]=picked("sym").includes(l)});
+  const au={};AUTO.forEach(([k,l])=>{au[k]=picked("auto").includes(l)});
+  a.type=one("type")||a.type||"Other";
+  a.side=picked("side");
+  a.symptoms=sym;
+  a.aura=picked("aura").length>0;
+  a.autonomic=au;a.autonomicSide=one("autoside");
+  a.note=document.getElementById("nt").value.trim();
+  a.scored=true;
+  const t0=fromLocal(document.getElementById("t0").value),t1=fromLocal(document.getElementById("t1").value);
+  if(t0)a.startedAt=t0;
+  a.endedAt=t1||a.endedAt||Date.now();
+  if(a.endedAt<a.startedAt){toast("End time is before the start");return}
+  put("attacks",a);
+  const v=score(a);
+  emit({event:"attack end",at:Date.now(),attackId:a.id,started:a.startedAt,ended:a.endedAt,
+    type:a.type,side:(a.side||[]).join(" / "),aura:!!a.aura,
+    throbbing:!!sym.throbbing,oneSided:!!sym.oneSided,nausea:!!sym.nausea,lightSound:!!sym.lightSound,
+    stopped:!!sym.stopped,worseMove:!!sym.worseMove,eye:!!au.eye,nose:!!au.nose,
+    autonomicSide:a.autonomicSide||"",note:a.note||""},a.id);
+  shut();toast("Saved · "+v.verdict+" (ID "+v.id+", POUND "+v.pound+")");
+}
+
+function historySheet(){
+  const all=live("attacks").sort((x,y)=>y.startedAt-x.startedAt);
+  openSheet('<div class="sheet-h"><h3>All attacks</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">'+all.length+' logged. <button class="lnk" id="addPast">Add one you missed</button></p>'+
+    (all.length?all.map(a=>{const v=score(a);
+      const cls=v.verdict==="Migraine likely"?"mig":v.verdict==="Tension-type likely"?"ten":"";
+      return '<div class="card"><div class="card-h"><b>'+dmy(a.startedAt)+", "+hhmm(a.startedAt)+"</b>"+
+        '<span class="verdict '+cls+'">'+v.verdict+"</span></div>"+
+        '<div class="ev-d">'+(a.endedAt?(hours(a)||0).toFixed(1)+"h":"still running")+
+        (a.type?" · "+esc(a.type):"")+(a.side&&a.side.length?" · "+esc(a.side.join(", ")):"")+
+        (a.aura?" · aura":"")+"</div>"+
+        (a.note?'<div class="ev-d">'+esc(a.note)+"</div>":"")+
+        '<div style="margin-top:8px"><button class="lnk" data-score="'+a.id+'">'+(a.scored?"Edit":"Score it")+"</button></div></div>";
+    }).join(""):'<div class="empty"><b>Nothing yet</b><span>Attacks appear here once you close one.</span></div>'));
+  document.getElementById("x").onclick=shut;
+  document.getElementById("addPast").onclick=()=>{
+    const a=put("attacks",{id:uid(),startedAt:Date.now()-36e5,endedAt:Date.now(),scored:false});
+    scoreSheet(a.id);
+  };
+  sheet.querySelectorAll("[data-score]").forEach(b=>b.onclick=()=>scoreSheet(b.dataset.score));
+}
+
+function csv(rows){return rows.map(r=>r.map(c=>{const s=String(c==null?"":c);
+  return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}).join(",")).join("\n")}
+function saveFile(name,text,mime){
+  const b=new Blob([text],{type:(mime||"text/plain")+";charset=utf-8"});
+  const u=URL.createObjectURL(b),a=document.createElement("a");
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},500);
+}
+function buildFiles(){
+  const aRows=[["Started","Ended","Hours","Type","Side","Aura","Throbbing","One-sided","Nausea","Light/Sound","Stopped","Worse on movement","Watery eye","Blocked nose","Autonomic side","ID Migraine","POUND","Verdict","Notes"]];
+  live("attacks").sort((x,y)=>x.startedAt-y.startedAt).forEach(a=>{const v=score(a),s=a.symptoms||{},au=a.autonomic||{};
+    aRows.push([dayKey(a.startedAt)+" "+hhmm(a.startedAt),a.endedAt?dayKey(a.endedAt)+" "+hhmm(a.endedAt):"",
+      a.endedAt?(hours(a)||0).toFixed(1):"",a.type||"",(a.side||[]).join(" / "),a.aura?"Y":"N",
+      s.throbbing?"Y":"N",s.oneSided?"Y":"N",s.nausea?"Y":"N",s.lightSound?"Y":"N",s.stopped?"Y":"N",s.worseMove?"Y":"N",
+      au.eye?"Y":"N",au.nose?"Y":"N",a.autonomicSide||"",v.id==null?"":v.id,v.pound==null?"":v.pound,v.verdict,a.note||""]);});
+  const rRows=[["Date","Time","Systolic","Diastolic","Pulse","Dizzy on standing","Note"]];
+  live("readings").sort((x,y)=>x.at-y.at).forEach(r=>rRows.push([dayKey(r.at),hhmm(r.at),r.sys,r.dia,r.pulse||"",r.orthostatic?"Y":"N",r.note||""]));
+  const dRows=[["Date","Time","Drug","Class"]];
+  live("doses").sort((x,y)=>x.at-y.at).forEach(d=>dRows.push([dayKey(d.at),hhmm(d.at),d.drug,CLASS[d.drug]||""]));
+  const sRows=[["Date","Time","Signs","Note"]];
+  live("signals").sort((x,y)=>x.at-y.at).forEach(s=>sRows.push([dayKey(s.at),hhmm(s.at),(s.kinds||[]).join(" / "),s.note||""]));
+  return[["attacks.csv",csv(aRows),"text/csv"],["bp-readings.csv",csv(rRows),"text/csv"],
+    ["doses.csv",csv(dRows),"text/csv"],["warning-signs.csv",csv(sRows),"text/csv"],
+    ["attack-log-backup.json",JSON.stringify({records:S,outbox:outbox},null,1),"application/json"]];
+}
+function exportSheet(){
+  const files=buildFiles();
+  openSheet('<div class="sheet-h"><h3>Export</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Everything here is already in your Sheet. These are for a backup, or to hand a clinician.</p>'+
+    files.map((f,i)=>'<div class="card"><div class="card-h"><b>'+f[0]+"</b><em>"+(f[1].split("\n").length-1)+" rows</em></div>"+
+      '<div class="actions" style="margin-top:0"><button class="big" data-dl="'+i+'">Save file</button></div></div>').join(""));
+  document.getElementById("x").onclick=shut;
+  sheet.querySelectorAll("[data-dl]").forEach(b=>b.onclick=()=>{
+    const f=files[+b.dataset.dl];saveFile(f[0],f[1],f[2]);toast("Saved "+f[0]);
+  });
+}
+function setupSheet(){
+  const c=cfg();
+  openSheet('<div class="sheet-h"><h3>Settings</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">Where this app posts. From Apps Script: Deploy &rsaquo; New deployment &rsaquo; Web app, execute as you, access Anyone. Paste the /exec URL.</p>'+
+    '<div class="field"><label for="u">Web app URL</label><input type="text" id="u" placeholder="https://script.google.com/macros/s/.../exec" value="'+esc(c.url||"")+'"></div>'+
+    '<div class="field"><label for="tk">Token</label><input type="text" id="tk" value="'+esc(c.token||"")+'"><div style="font-size:13px;color:var(--dim);margin-top:6px">Must match TOKEN in the script. Anyone holding the URL and token can append rows, so keep both long.</div></div>'+
+    '<div class="actions"><button class="big" id="go">Save</button><button class="big ghost" id="test">Test it</button></div>'+
+    '<div class="field" style="margin-top:18px"><label>Not yet sent</label><div id="ob" class="ev-d">'+outbox.length+' rows queued</div></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("go").onclick=()=>{
+    setCfg({url:document.getElementById("u").value.trim(),token:document.getElementById("tk").value.trim()});
+    shut();toast("Saved");(async()=>{await pullAll();await send()})();
+  };
+  document.getElementById("test").onclick=async()=>{
+    setCfg({url:document.getElementById("u").value.trim(),token:document.getElementById("tk").value.trim()});
+    const c2=cfg();
+    document.getElementById("ob").textContent="testing…";
+    try{
+      const r=await fetch(c2.url,{method:"POST",body:JSON.stringify({token:c2.token,events:[]})});
+      const j=await r.json();
+      document.getElementById("ob").textContent=j.ok?"Connected. The Sheet answered.":"Rejected: "+(j.error||"unknown");
+    }catch(e){document.getElementById("ob").textContent="Could not reach it. Check the URL is the /exec one and access is set to Anyone."}
+  };
+}
+/* ---------- BP chart, last 30 days ---------- */
+const PAD={l:30,r:9,t:10,b:18}, VW=360;
+function sx(t,t0,t1,w){return PAD.l+(t-t0)/(t1-t0)*w}
+function sy(v,lo,hi,top,h){return top+(hi-v)/(hi-lo)*h}
+function esc2(s){return esc(s)}
+
+function chartSheet(){
+  const now=Date.now(), t0=now-30*DAY, t1=now;
+  const rs=live("readings").filter(r=>r.at>=t0&&r.sys&&r.dia).sort((a,b)=>a.at-b.at);
+  const atk=live("attacks").filter(a=>a.startedAt>=t0-DAY);
+  if(!rs.length){
+    openSheet('<div class="sheet-h"><h3>Blood pressure</h3><button class="lnk" id="x">Close</button></div>'+
+      '<div class="empty"><b>No readings in the last 30 days</b><span>Log one with Blood pressure on the main screen and it will plot here.</span></div>');
+    document.getElementById("x").onclick=shut;return;
+  }
+  const am=rs.filter(r=>new Date(r.at).getHours()<12), pm=rs.filter(r=>new Date(r.at).getHours()>=12);
+  const avg=(a,k)=>a.length?Math.round(a.reduce((s,r)=>s+r[k],0)/a.length):null;
+  const pulses=rs.filter(r=>r.pulse).map(r=>r.pulse);
+
+  const bp=plot(rs,t0,t1,atk,"bp"), pl=plot(rs,t0,t1,atk,"pulse");
+  openSheet('<div class="sheet-h"><h3>Blood pressure</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">'+rs.length+" readings over 30 days. Shaded bands are days with an attack.</p>"+
+    '<div class="stats" style="margin-bottom:4px">'+
+      stat(avg(am,"sys")+"/"+avg(am,"dia"),"morning average ("+am.length+")")+
+      stat(avg(pm,"sys")+"/"+avg(pm,"dia"),"evening average ("+pm.length+")")+
+    "</div>"+
+    '<div class="ctitle">mmHg</div><div class="readout" id="ro">Tap the chart to read a point</div>'+bp+
+    '<div class="key"><span><i style="background:var(--sys)"></i>Systolic</span>'+
+      '<span><i style="background:var(--dia)"></i>Diastolic</span>'+
+      '<span>●&nbsp;morning&nbsp;&nbsp;○&nbsp;evening</span>'+
+      '<span><i style="border-top:2px dashed var(--ref);height:0;border-radius:0"></i>135/85 guide</span></div>'+
+    (pulses.length?'<div class="ctitle">Pulse, bpm</div>'+pl+
+      '<div class="key"><span>Range '+Math.min.apply(null,pulses)+"-"+Math.max.apply(null,pulses)+
+      " · average "+Math.round(pulses.reduce((a,b)=>a+b,0)/pulses.length)+"</span></div>":"")+
+    '<div class="actions"><button class="big ghost" id="tbl">Show the numbers</button></div>'+
+    '<div id="tblBox" hidden></div>');
+  document.getElementById("x").onclick=shut;
+  document.getElementById("tbl").onclick=()=>{
+    const b=document.getElementById("tblBox");
+    if(!b.hidden){b.hidden=true;document.getElementById("tbl").textContent="Show the numbers";return}
+    b.innerHTML='<div class="feed" style="margin-top:12px">'+rs.slice().reverse().map(r=>
+      '<div class="ev"><time>'+dmy(r.at)+"</time>"+
+      '<div class="ev-main"><div class="ev-t">'+r.sys+"/"+r.dia+(r.pulse?" · "+r.pulse+" bpm":"")+"</div>"+
+      '<div class="ev-d">'+hhmm(r.at)+(r.orthostatic?" · dizzy on standing":"")+(r.note?" · "+esc2(r.note):"")+"</div></div></div>").join("")+"</div>";
+    b.hidden=false;document.getElementById("tbl").textContent="Hide the numbers";
+  };
+  wireReadout(rs,t0,t1);
+}
+function stat(n,l){return '<div class="stat"><div class="n">'+n+'</div><div class="l">'+l+"</div></div>"}
+
+function plot(rs,t0,t1,atk,kind){
+  const isBp=kind==="bp";
+  const H=isBp?200:112, h=H-PAD.t-PAD.b, w=VW-PAD.l-PAD.r;
+  const vals=isBp?rs.map(r=>r.dia).concat(rs.map(r=>r.sys)):rs.filter(r=>r.pulse).map(r=>r.pulse);
+  if(!vals.length)return"";
+  let lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+  if(isBp){lo=Math.min(60,Math.floor(lo/10)*10);hi=Math.max(150,Math.ceil(hi/10)*10)}
+  else{lo=Math.floor((lo-4)/10)*10;hi=Math.ceil((hi+4)/10)*10}
+  const step=isBp?20:20;
+  let g="",ticks="";
+  for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step){
+    const y=sy(v,lo,hi,PAD.t,h);
+    g+='<line x1="'+PAD.l+'" x2="'+(VW-PAD.r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--grid)" stroke-width="1"/>';
+    ticks+='<text x="'+(PAD.l-5)+'" y="'+(y+3)+'" font-size="9" text-anchor="end">'+v+"</text>";
+  }
+  // day bands for attacks
+  let bands="";
+  const seen={};
+  atk.forEach(a=>{const k=dayKey(a.startedAt);if(seen[k])return;seen[k]=1;
+    const d=new Date(a.startedAt);d.setHours(0,0,0,0);
+    const s=Math.max(d.getTime(),t0), e=Math.min(d.getTime()+DAY,t1);
+    if(e<=s)return;
+    bands+='<rect x="'+sx(s,t0,t1,w)+'" y="'+PAD.t+'" width="'+Math.max(1,sx(e,t0,t1,w)-sx(s,t0,t1,w))+
+      '" height="'+h+'" fill="#d2664a" opacity="0.13"/>';});
+  // x labels every 7 days
+  let xl="";
+  for(let i=0;i<=4;i++){const t=t0+(t1-t0)*i/4;
+    xl+='<text x="'+sx(t,t0,t1,w)+'" y="'+(H-5)+'" font-size="9" text-anchor="'+(i===0?"start":i===4?"end":"middle")+'">'+dmy(t)+"</text>";}
+  let refs="";
+  if(isBp){[135,85].forEach(v=>{const y=sy(v,lo,hi,PAD.t,h);
+    refs+='<line x1="'+PAD.l+'" x2="'+(VW-PAD.r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--ref)" stroke-width="1" stroke-dasharray="3 3"/>';});}
+  function series(key,col){
+    const pts=rs.filter(r=>r[key]).map(r=>[sx(r.at,t0,t1,w),sy(r[key],lo,hi,PAD.t,h),r]);
+    if(!pts.length)return"";
+    const line='<polyline fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="'+
+      pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")+'"/>';
+    const dots=pts.map(p=>{const morning=new Date(p[2].at).getHours()<12;
+      return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.6" fill="'+(morning?col:"var(--surface)")+
+        '" stroke="'+col+'" stroke-width="1.5"/>';}).join("");
+    return line+dots;
+  }
+  const body=isBp
+    ? series("sys","var(--sys)")+series("dia","var(--dia)")
+    : series("pulse","var(--dim)");
+  return '<svg class="chart" viewBox="0 0 '+VW+" "+H+'" role="img" aria-label="'+
+    (isBp?"Blood pressure over the last 30 days":"Pulse over the last 30 days")+'"'+
+    (isBp?' id="bpSvg"':"")+'>'+bands+g+refs+
+    '<line x1="'+PAD.l+'" x2="'+(VW-PAD.r)+'" y1="'+(PAD.t+h)+'" y2="'+(PAD.t+h)+'" stroke="var(--line)" stroke-width="1"/>'+
+    ticks+xl+body+'<line id="cross" x1="0" x2="0" y1="'+PAD.t+'" y2="'+(PAD.t+h)+'" stroke="var(--dim-2)" stroke-width="1" opacity="0"/></svg>';
+}
+
+function wireReadout(rs,t0,t1){
+  const svg=document.getElementById("bpSvg"), ro=document.getElementById("ro");
+  if(!svg)return;
+  const w=VW-PAD.l-PAD.r;
+  function at(ev){
+    const b=svg.getBoundingClientRect();
+    const x=((ev.touches?ev.touches[0].clientX:ev.clientX)-b.left)/b.width*VW;
+    const t=t0+(x-PAD.l)/w*(t1-t0);
+    let best=null,bd=Infinity;
+    rs.forEach(r=>{const d=Math.abs(r.at-t);if(d<bd){bd=d;best=r}});
+    if(!best)return;
+    ro.textContent=dmy(best.at)+" "+hhmm(best.at)+"  ·  "+best.sys+"/"+best.dia+(best.pulse?"  ·  "+best.pulse+" bpm":"");
+    const c=svg.querySelector("#cross");
+    c.setAttribute("x1",sx(best.at,t0,t1,w));c.setAttribute("x2",sx(best.at,t0,t1,w));c.setAttribute("opacity","0.5");
+  }
+  svg.addEventListener("pointerdown",at);
+  svg.addEventListener("pointermove",e=>{if(e.pressure>0||e.buttons||e.pointerType==="mouse")at(e)});
+}
+
+document.getElementById("btnSignal").onclick=signalSheet;
+document.getElementById("btnMed").onclick=medSheet;
+document.getElementById("btnBp").onclick=bpSheet;
+document.getElementById("btnHistory").onclick=historySheet;
+document.getElementById("btnChart").onclick=chartSheet;
+document.getElementById("btnExport").onclick=exportSheet;
+document.getElementById("btnSetup").onclick=setupSheet;
+window.addEventListener("online",send);
+
+/* ---------- boot ---------- */
+loadLocal();render();paintOutbox();
+const _c=cfg();
+if(!_c.url){setSync("","not connected — open Settings")}
+else{(async()=>{
+  setSync("wait","loading from your Sheet");
+  const err=await pullAll();
+  if(err){setSync("",err+" — tap to retry")}
+  else{await send();
+    const n=COLLS.reduce((a,c)=>a+live(c).length,0);
+    if(!outbox.length)setSync("ok",n+" record"+(n===1?"":"s")+" from your Sheet")}
+})()}
+document.getElementById("syncTxt").parentElement.style.cursor="pointer";
+document.getElementById("syncTxt").parentElement.onclick=async()=>{
+  setSync("wait","refreshing");const e=await pullAll();
+  if(e){setSync("",e)}else{await send();const n=COLLS.reduce((a,c)=>a+live(c).length,0);
+    if(!outbox.length)setSync("ok",n+" record"+(n===1?"":"s")+" from your Sheet")}};
+setInterval(()=>{if(outbox.length)send()},120000);
+
+</script>
+</body>
+</html>
