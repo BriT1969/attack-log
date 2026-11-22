@@ -1,0 +1,14 @@
+# nothing secret should ever be in here, but just in case
+*.local
+.env
+secrets.*
+token.txt
+
+# exports and backups pulled out of the app
+*.csv
+attack-log-backup*.json
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
