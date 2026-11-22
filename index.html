@@ -193,6 +193,15 @@ textarea{min-height:76px;resize:vertical}
 .dl-t.wait{color:var(--amber)}
 .dl-t.ok{color:var(--sage)}
 .dl-empty{padding:12px 14px;font-size:14px;color:var(--dim-2)}
+/* patterns */
+.hist{display:flex;gap:2px;margin:6px 0 4px}
+.hb{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}
+.hb .bar{height:64px;width:100%;display:flex;align-items:flex-end}
+.hb i{display:block;width:100%;background:var(--amber);border-radius:2px 2px 0 0}
+.hb.alt i{background:var(--sage)}
+.hb small{font-family:var(--mono);font-size:10px;color:var(--dim-2);height:13px;line-height:13px;white-space:nowrap}
+.ptitle{font-size:12px;font-family:var(--mono);color:var(--dim-2);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 2px}
+.pnote{font-size:13px;color:var(--dim);margin:0 0 6px}
 </style>
 </head>
 <body>
@@ -234,6 +243,7 @@ textarea{min-height:76px;resize:vertical}
 
   <div class="foot">
     <button class="lnk" id="btnHistory">All attacks</button>
+    <button class="lnk" id="btnPatterns">Patterns</button>
     <button class="lnk" id="btnChart">BP chart</button>
     <button class="lnk" id="btnExport">Export</button>
     <button class="lnk" id="btnSetup">Settings</button>
@@ -523,6 +533,90 @@ function detailSheet(k){
 document.getElementById("stats").addEventListener("click",e=>{
   const b=e.target.closest(".stat");if(b)detailSheet(b.dataset.k);
 });
+
+/* ---------- patterns ---------- */
+const BEDKEY="attacklog.bedtime";
+function getBed(){try{return localStorage.getItem(BEDKEY)||""}catch(e){return""}}
+function setBed(v){try{localStorage.setItem(BEDKEY,v)}catch(e){}}
+function median(a){if(!a.length)return null;const b=a.slice().sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2}
+function hrs(ms){const d=new Date(ms);return d.getHours()+d.getMinutes()/60}
+function clock(h){h=((h%24)+24)%24;let H=Math.floor(h),M=Math.round((h-H)*60);if(M===60){H=(H+1)%24;M=0}return String(H).padStart(2,"0")+":"+String(M).padStart(2,"0")}
+function hist(counts,labels,alt){
+  const mx=Math.max.apply(null,counts.concat([1]));
+  return '<div class="hist">'+counts.map((c,i)=>'<div class="hb'+(alt?" alt":"")+'"><small>'+(c||"")+'</small><div class="bar"><i style="height:'+(c/mx*100)+'%"></i></div><small>'+(labels[i]||"")+"</small></div>").join("")+"</div>";
+}
+function clusterList(atks){
+  const keys=[...new Set(atks.map(a=>dayKey(a.startedAt)))].sort();
+  const dnum=k=>{const p=k.split("-");return Math.round(new Date(+p[0],+p[1]-1,+p[2]).getTime()/DAY)};
+  const cl=[];
+  keys.forEach(k=>{const n=dnum(k),last=cl[cl.length-1];
+    if(last&&n-last.endN<=3){last.endN=n;last.endK=k;last.days++}else cl.push({startK:k,endK:k,startN:n,endN:n,days:1})});
+  cl.forEach(c=>{c.attacks=atks.filter(a=>{const k=dayKey(a.startedAt);return k>=c.startK&&k<=c.endK}).length});
+  return cl;
+}
+function patternsSheet(){
+  const all=live("attacks").sort((x,y)=>x.startedAt-y.startedAt);
+  const closed=all.filter(a=>a.endedAt&&a.endedAt>a.startedAt);
+  if(all.length<3){
+    openSheet('<div class="sheet-h"><h3>Patterns</h3><button class="lnk" id="x">Close</button></div>'+
+      '<div class="empty"><b>Not enough attacks yet</b><span>Patterns appear once there are a few logged.</span></div>');
+    document.getElementById("x").onclick=shut;return;
+  }
+  const lab24=Array.from({length:24},(_,h)=>h%3===0?String(h):"");
+  const on=Array(24).fill(0),off=Array(24).fill(0);
+  all.forEach(a=>on[new Date(a.startedAt).getHours()]++);
+  closed.forEach(a=>off[new Date(a.endedAt).getHours()]++);
+  const night=all.filter(a=>new Date(a.startedAt).getHours()<6).length;
+  // typical start time: shift by 6h so a night spanning midnight doesn't split in two
+  const medOn=median(all.map(a=>(hrs(a.startedAt)+6)%24));
+  const endsBy12=closed.filter(a=>new Date(a.endedAt).getHours()<12&&dayKey(a.endedAt)===dayKey(a.startedAt)).length;
+  const durs=closed.map(a=>hours(a));
+  const B=[[0,1,"<1"],[1,2,"1-2"],[2,4,"2-4"],[4,6,"4-6"],[6,8,"6-8"],[8,12,"8-12"],[12,24,"12-24"],[24,1e9,"24+"]];
+  const dc=B.map(b=>durs.filter(d=>d>=b[0]&&d<b[1]).length);
+  const bed=getBed();
+  let bedHtml="";
+  if(bed){
+    const bh=+bed.split(":")[0]+(+bed.split(":")[1])/60;
+    const after=all.map(a=>((hrs(a.startedAt)-bh)%24+24)%24);
+    const asleep=after.filter(h=>h>=1&&h<=10).length;
+    const bc=Array(12).fill(0);after.forEach(h=>{if(h<12)bc[Math.floor(h)]++});
+    bedHtml='<div class="ptitle">Hours after bedtime ('+esc(bed)+")</div>"+
+      '<p class="pnote">Median start is '+median(after).toFixed(1)+"h after bedtime. "+asleep+" of "+all.length+" started 1 to 10 hours after it.</p>"+
+      hist(bc,bc.map((_,i)=>i%2===0?String(i):""))+
+      '<p class="pnote">Bedtime means when you usually fall asleep. A late night or shift work will blur this.</p>';
+  }
+  const cl=clusterList(all);
+  const gaps=[];for(let i=1;i<cl.length;i++)gaps.push(cl[i].startN-cl[i-1].endN);
+  const recent=cl.slice().reverse().slice(0,12);
+  const dmyk=k=>{const p=k.split("-");return dmy(new Date(+p[0],+p[1]-1,+p[2]).getTime())};
+  const md=median(cl.map(c=>c.days));
+  const cell=(n,l)=>'<div class="stat" style="cursor:default"><div class="n">'+n+'</div><div class="l">'+l+"</div></div>";
+  openSheet('<div class="sheet-h"><h3>Patterns</h3><button class="lnk" id="x">Close</button></div>'+
+    '<p class="sheet-note">All '+all.length+' logged attacks. Descriptive only: it shows when and how they happen, it does not diagnose.</p>'+
+    '<div class="stats" style="margin-bottom:4px">'+
+      cell(clock(medOn-6),"typical start time")+
+      cell(night+"/"+all.length,"started 00:00 to 06:00")+
+      cell(durs.length?median(durs).toFixed(1)+"h":"-","median length")+
+      cell(closed.length?endsBy12+"/"+closed.length:"-","over by midday, same day")+
+    "</div>"+
+    '<div class="ptitle">When they start</div><p class="pnote">Hour of day, 24h clock.</p>'+hist(on,lab24)+
+    '<div class="ptitle">When they end</div>'+hist(off,lab24,true)+
+    '<div class="ptitle">How long they last</div><p class="pnote">Hours.</p>'+hist(dc,B.map(b=>b[2]))+
+    '<div class="field" style="margin-top:14px"><label for="bedt">Usual bedtime (optional)</label>'+
+      '<input type="time" id="bedt" value="'+esc(bed)+'"></div>'+bedHtml+
+    '<div class="ptitle">Clusters</div>'+
+    '<p class="pnote">Attack days less than 4 days apart are grouped into one cluster. '+cl.length+" cluster"+(cl.length===1?"":"s")+
+      (gaps.length?", median gap between them "+Math.round(median(gaps))+" days":"")+
+      (cl.length?", median "+md+" attack day"+(md===1?"":"s")+" each":"")+".</p>"+
+    '<div class="dl">'+recent.map((c,i)=>{
+      const older=recent[i+1];
+      return '<div class="dl-row"><div><div class="dl-n">'+(c.startK===c.endK?dmyk(c.startK):dmyk(c.startK)+" to "+dmyk(c.endK))+
+        '</div><div class="dl-s">'+c.days+" day"+(c.days===1?"":"s")+" · "+c.attacks+" attack"+(c.attacks===1?"":"s")+"</div></div>"+
+        (older?'<div class="dl-t"><small>'+(c.startN-older.endN)+" days after the previous</small></div>":"")+"</div>";
+    }).join("")+"</div>");
+  document.getElementById("x").onclick=shut;
+  document.getElementById("bedt").onchange=e=>{setBed(e.target.value);patternsSheet()};
+}
 
 /* ---------- toast ---------- */
 function toast(msg,undo){
@@ -926,6 +1020,7 @@ document.getElementById("btnMed").onclick=medSheet;
 document.getElementById("btnBp").onclick=bpSheet;
 document.getElementById("btnHistory").onclick=historySheet;
 document.getElementById("btnChart").onclick=chartSheet;
+document.getElementById("btnPatterns").onclick=patternsSheet;
 document.getElementById("btnExport").onclick=exportSheet;
 document.getElementById("btnSetup").onclick=setupSheet;
 window.addEventListener("online",send);
