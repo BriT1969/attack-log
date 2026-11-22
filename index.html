@@ -202,6 +202,15 @@ textarea{min-height:76px;resize:vertical}
 .hb small{font-family:var(--mono);font-size:10px;color:var(--dim-2);height:13px;line-height:13px;white-space:nowrap}
 .ptitle{font-size:12px;font-family:var(--mono);color:var(--dim-2);text-transform:uppercase;letter-spacing:.08em;margin:18px 0 2px}
 .pnote{font-size:13px;color:var(--dim);margin:0 0 6px}
+/* dose outcome + comparison tables */
+.oc{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.oc span{font-size:12px;color:var(--dim-2);margin-right:2px}
+.ob{font:inherit;font-size:13px;min-height:32px;padding:4px 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--dim);cursor:pointer}
+.ob.on{border-color:var(--amber);color:var(--amber);background:var(--ember-dim)}
+.cmp{display:grid;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden;font-size:14px;margin-bottom:6px}
+.cmp>div{padding:9px 12px;border-top:1px solid var(--line-soft);font-variant-numeric:tabular-nums}
+.cmp>.h{border-top:0;font-family:var(--mono);font-size:11px;color:var(--dim-2);text-transform:uppercase;letter-spacing:.06em}
+.cmp>.r{color:var(--dim)}
 </style>
 </head>
 <body>
@@ -319,6 +328,7 @@ const Y=v=>String(v||"").trim()==="Y";
 const T=v=>v?Date.parse(v):null;
 function rebuild(rows){
   const N={attacks:{},signals:{},doses:{},readings:{}};
+  const outs=[];
   rows.forEach((r,i)=>{
     const at=T(r[C.ts]); if(!at)return;
     const ev=String(r[C.event]||"");
@@ -343,6 +353,8 @@ function rebuild(rows){
       N.signals["s"+i]={id:"s"+i,at:at,kinds:String(r[C.signs]||"").split(" / ").filter(Boolean),note:r[C.note]||""};
     }else if(ev==="dose"){
       N.doses["d"+i]={id:"d"+i,at:at,drug:r[C.drug]||"",attackId:r[C.attackId]||null};
+    }else if(ev==="dose outcome"){
+      outs.push({started:T(r[C.started]),drug:r[C.drug]||"",v:String(r[C.note]||"")});
     }else if(ev==="reading"){
       N.readings["r"+i]={id:"r"+i,at:at,sys:+r[C.sys]||0,dia:+r[C.dia]||0,
         pulse:+r[C.pulse]||null,orthostatic:Y(r[C.dizzy]),note:r[C.note]||""};
@@ -351,6 +363,11 @@ function rebuild(rows){
   // keep anything still waiting to be sent
   const keep=new Set(outbox.map(e=>e.localRef).filter(Boolean));
   COLLS.forEach(c=>{Object.keys(S[c]).forEach(id=>{if(keep.has(id))N[c][id]=S[c][id]})});
+  // a dose outcome is its own row pointing at the dose by drug and time; the latest wins.
+  // Ones still waiting in the outbox count too, so a rating never flickers back.
+  const applyOut=o=>{const d=Object.values(N.doses).find(x=>x.drug===o.drug&&o.started&&Math.abs(x.at-o.started)<2000);if(d)d.helped=o.v};
+  outs.forEach(applyOut);
+  outbox.filter(e=>e.event==="dose outcome").forEach(e=>applyOut({started:e.started,drug:e.drug,v:e.note}));
   S=N;saveLocal();
 }
 async function pullAll(){
@@ -492,7 +509,7 @@ function detailSheet(k){
       const h=hours(a);
       const sub=hhmm(a.startedAt)+(a.endedAt?" to "+hhmm(a.endedAt)+" · "+h.toFixed(1)+"h":" · still running");
       const x=attackExtras(a);
-      const extra="<br>Meds: "+(x.doses.length?esc(x.doses.map(d=>hhmm(d.at)+" "+d.drug).join(" · ")):"none logged")+
+      const extra="<br>Meds: "+(x.doses.length?esc(x.doses.map(doseLabel).join(" · ")):"none logged")+
         "<br>BP: "+(x.bp.length?esc(x.bp.map(r=>hhmm(r.at)+" "+r.sys+"/"+r.dia+(r.pulse?" p"+r.pulse:"")).join(" · ")):"none logged");
       return row(dmy(a.startedAt),esc(sub+(a.note?" · "+a.note:""))+extra,a.scored?esc(score(a).verdict.replace(" likely","")):"not scored",a.scored?"":"wait");
     }).join("");
@@ -522,7 +539,7 @@ function detailSheet(k){
     }
     rows=keys.map(key=>{
       const g=by[key].slice().sort((x,y)=>x.at-y.at);
-      return row(dmy(g[0].at),esc(g.map(d=>hhmm(d.at)+" "+d.drug).join(" · ")),g.length+" dose"+(g.length===1?"":"s"));
+      return row(dmy(g[0].at),esc(g.map(doseLabel).join(" · ")),g.length+" dose"+(g.length===1?"":"s"));
     }).join("");
   }
   openSheet('<div class="sheet-h"><h3>'+esc(title)+'</h3><button class="lnk" id="x">Close</button></div>'+
@@ -554,6 +571,45 @@ function clusterList(atks){
   cl.forEach(c=>{c.attacks=atks.filter(a=>{const k=dayKey(a.startedAt);return k>=c.startK&&k<=c.endK}).length});
   return cl;
 }
+function nightDayHtml(all){
+  const isNight=a=>{const h=new Date(a.startedAt).getHours();return h>=22||h<8};
+  const G=[all.filter(isNight),all.filter(a=>!isNight(a))];
+  const info=G.map(g=>{
+    const sc=g.filter(a=>a.scored);
+    const durs=g.filter(a=>a.endedAt&&a.endedAt>a.startedAt).map(a=>hours(a));
+    const sym=k=>sc.filter(a=>(a.symptoms||{})[k]).length+"/"+sc.length;
+    const ver=v=>sc.filter(a=>score(a).verdict===v).length+"/"+sc.length;
+    return{
+      n:String(g.length),
+      len:durs.length?median(durs).toFixed(1)+"h":"-",
+      throb:sym("throbbing"),one:sym("oneSided"),nau:sym("nausea"),ls:sym("lightSound"),stop:sym("stopped"),worse:sym("worseMove"),
+      aura:sc.filter(a=>a.aura).length+"/"+sc.length,
+      auto:sc.filter(a=>a.autonomic&&(a.autonomic.eye||a.autonomic.nose)).length+"/"+sc.length,
+      mig:ver("Migraine likely"),ten:ver("Tension-type likely"),unc:ver("Unclear"),
+      trip:g.filter(a=>attackExtras(a).doses.some(d=>CLASS[d.drug]==="triptan")).length+"/"+g.length
+    };
+  });
+  const R=[["Attacks","n"],["Median length","len"],["Throbbing","throb"],["One-sided","one"],["Nausea","nau"],["Light or sound","ls"],
+    ["Stopped activity","stop"],["Worse on movement","worse"],["Aura","aura"],["Eye or nose signs","auto"],
+    ["Migraine likely","mig"],["Tension-type likely","ten"],["Unclear","unc"],["Took a triptan","trip"]];
+  return '<div class="ptitle">Night vs daytime</div>'+
+    '<p class="pnote">Night means it started between 22:00 and 08:00. Symptom rows count only attacks you have scored.</p>'+
+    '<div class="cmp" style="grid-template-columns:1.4fr 1fr 1fr">'+
+    '<div class="h"></div><div class="h">Night</div><div class="h">Day</div>'+
+    R.map(r=>'<div class="r">'+r[0]+"</div><div>"+info[0][r[1]]+"</div><div>"+info[1][r[1]]+"</div>").join("")+"</div>";
+}
+function medsWorkedHtml(){
+  const by={};
+  live("doses").forEach(d=>{(by[d.drug]=by[d.drug]||{yes:0,partly:0,no:0,none:0,n:0});const o=by[d.drug];o.n++;o[d.helped||"none"]++});
+  const names=Object.keys(by).sort((x,y)=>by[y].n-by[x].n);
+  if(!names.length)return"";
+  return '<div class="ptitle">How the meds worked</div>'+
+    '<p class="pnote">From the Did it help? buttons on the Took something page. Unrated doses are not counted as failures.</p>'+
+    '<div class="cmp" style="grid-template-columns:1.6fr repeat(4,1fr)">'+
+    '<div class="h"></div><div class="h">Yes</div><div class="h">Part</div><div class="h">No</div><div class="h">Unrated</div>'+
+    names.map(n=>{const o=by[n];return '<div class="r">'+esc(n)+"</div><div>"+o.yes+"</div><div>"+o.partly+"</div><div>"+o.no+"</div><div>"+o.none+"</div>"}).join("")+"</div>";
+}
+
 function patternsSheet(){
   const all=live("attacks").sort((x,y)=>x.startedAt-y.startedAt);
   const closed=all.filter(a=>a.endedAt&&a.endedAt>a.startedAt);
@@ -604,6 +660,7 @@ function patternsSheet(){
     '<div class="ptitle">How long they last</div><p class="pnote">Hours.</p>'+hist(dc,B.map(b=>b[2]))+
     '<div class="field" style="margin-top:14px"><label for="bedt">Usual bedtime (optional)</label>'+
       '<input type="time" id="bedt" value="'+esc(bed)+'"></div>'+bedHtml+
+    nightDayHtml(all)+medsWorkedHtml()+
     '<div class="ptitle">Clusters</div>'+
     '<p class="pnote">Attack days less than 4 days apart are grouped into one cluster. '+cl.length+" cluster"+(cl.length===1?"":"s")+
       (gaps.length?", median gap between them "+Math.round(median(gaps))+" days":"")+
@@ -668,6 +725,15 @@ function signalSheet(){
 // the rest just show time since taken. Add entries as you learn the gaps.
 const GAP_H={"Paracetamol":4,"Sumatriptan":2,"Naratriptan":2};
 let medTick=null;
+const OUT=[["yes","Helped"],["partly","Partly"],["no","No"]];
+const OUTWORD={yes:"helped",partly:"partly helped",no:"no help"};
+function doseLabel(d){return hhmm(d.at)+" "+d.drug+(d.helped?" ("+OUTWORD[d.helped]+")":"")}
+function setOutcome(id,k){
+  const d=S.doses[id];if(!d||d.helped===k)return;
+  d.helped=k;put("doses",d);
+  emit({event:"dose outcome",at:Date.now(),drug:d.drug,drugClass:CLASS[d.drug]||"",started:d.at,attackId:d.attackId||"",note:k},null);
+  medRefresh();
+}
 function hms(ms){
   ms=Math.max(0,Math.floor(ms/1000));
   const h=Math.floor(ms/3600),m=Math.floor(ms%3600/60),x=ms%60;
@@ -677,26 +743,36 @@ function medClockHtml(){
   const d=new Date();
   return hhmm(d.getTime())+":"+String(d.getSeconds()).padStart(2,"0")+"<small>"+dmy(d.getTime())+"</small>";
 }
-function medListHtml(){
+function timerCell(d,now){
+  const el=now-d.at,gap=GAP_H[d.drug];
+  if(gap){
+    const left=gap*3600e3-el;
+    return left>0
+      ?{cls:"wait",html:hms(left)+"<small>until next OK · "+hhmm(d.at+gap*3600e3)+"</small>"}
+      :{cls:"ok",html:"OK to take<small>"+hms(el)+" since taken</small>"};
+  }
+  return{cls:"",html:hms(el)+"<small>since taken</small>"};
+}
+function medDoses(){const now=Date.now();return live("doses").filter(d=>now-d.at<24*3600e3).sort((x,y)=>y.at-x.at)}
+function medListHtml(ds){
   const now=Date.now();
-  const ds=live("doses").filter(d=>now-d.at<24*3600e3).sort((x,y)=>y.at-x.at);
   if(!ds.length)return '<div class="dl-empty">Nothing taken in the last 24 hours.</div>';
   return ds.map(d=>{
-    const el=now-d.at,gap=GAP_H[d.drug];
-    let right='<div class="dl-t">'+hms(el)+"<small>since taken</small></div>";
-    if(gap){
-      const left=gap*3600e3-el;
-      right=left>0
-        ?'<div class="dl-t wait">'+hms(left)+"<small>until next OK · "+hhmm(d.at+gap*3600e3)+"</small></div>"
-        :'<div class="dl-t ok">OK to take<small>'+hms(el)+" since taken</small></div>";
-    }
-    return '<div class="dl-row"><div><div class="dl-n">'+esc(d.drug)+'</div><div class="dl-s">taken '+hhmm(d.at)+"</div></div>"+right+"</div>";
+    const t=timerCell(d,now);
+    return '<div class="dl-row"><div><div class="dl-n">'+esc(d.drug)+'</div><div class="dl-s">taken '+hhmm(d.at)+"</div>"+
+      '<div class="oc"><span>Did it help?</span>'+OUT.map(o=>'<button type="button" class="ob'+(d.helped===o[0]?" on":"")+'" data-o="'+o[0]+'" data-id="'+d.id+'">'+o[1]+"</button>").join("")+"</div></div>"+
+      '<div class="dl-t '+t.cls+'" data-tm="'+d.id+'">'+t.html+"</div></div>";
   }).join("");
 }
 function medRefresh(){
   const c=document.getElementById("medClock"),l=document.getElementById("medList");
   if(!c||!l){clearInterval(medTick);medTick=null;return}
-  c.innerHTML=medClockHtml();l.innerHTML=medListHtml();
+  c.innerHTML=medClockHtml();
+  const ds=medDoses(),sig=ds.map(d=>d.id+(d.helped||"")).join("|");
+  if(l.dataset.sig!==sig){l.innerHTML=medListHtml(ds);l.dataset.sig=sig;return}
+  // same doses: only the timers move, so buttons never get rebuilt under a finger
+  const now=Date.now();
+  ds.forEach(d=>{const el=l.querySelector('[data-tm="'+d.id+'"]');if(!el)return;const t=timerCell(d,now);el.className="dl-t "+t.cls;el.innerHTML=t.html});
 }
 function medSheet(){
   openSheet('<div class="sheet-h"><h3>Took something</h3><button class="lnk" id="x">Close</button></div>'+
@@ -708,6 +784,7 @@ function medSheet(){
   medRefresh();
   if(medTick)clearInterval(medTick);
   medTick=setInterval(medRefresh,1000);
+  document.getElementById("medList").onclick=e=>{const b=e.target.closest(".ob");if(b)setOutcome(b.dataset.id,b.dataset.o)};
   document.getElementById("x").onclick=shut;
   document.getElementById("go").onclick=()=>{
     const d=one("drug");if(!d){toast("Pick one");return}
@@ -823,7 +900,7 @@ function historySheet(){
         (a.aura?" · aura":"")+"</div>"+
         (a.note?'<div class="ev-d">'+esc(a.note)+"</div>":"")+
         (()=>{const x=attackExtras(a);
-          return '<div class="ev-d">Meds: '+(x.doses.length?esc(x.doses.map(d=>hhmm(d.at)+" "+d.drug).join(" · ")):"none logged")+"</div>"+
+          return '<div class="ev-d">Meds: '+(x.doses.length?esc(x.doses.map(doseLabel).join(" · ")):"none logged")+"</div>"+
             '<div class="ev-d">BP: '+(x.bp.length?esc(x.bp.map(r=>hhmm(r.at)+" "+r.sys+"/"+r.dia+(r.pulse?" p"+r.pulse:"")).join(" · ")):"none logged")+"</div>"})()+
         '<div style="margin-top:8px"><button class="lnk" data-score="'+a.id+'">'+(a.scored?"Edit":"Score it")+"</button></div></div>";
     }).join(""):'<div class="empty"><b>Nothing yet</b><span>Attacks appear here once you close one.</span></div>'));
@@ -852,8 +929,8 @@ function buildFiles(){
       au.eye?"Y":"N",au.nose?"Y":"N",a.autonomicSide||"",v.id==null?"":v.id,v.pound==null?"":v.pound,v.verdict,a.note||""]);});
   const rRows=[["Date","Time","Systolic","Diastolic","Pulse","Dizzy on standing","Note"]];
   live("readings").sort((x,y)=>x.at-y.at).forEach(r=>rRows.push([dayKey(r.at),hhmm(r.at),r.sys,r.dia,r.pulse||"",r.orthostatic?"Y":"N",r.note||""]));
-  const dRows=[["Date","Time","Drug","Class"]];
-  live("doses").sort((x,y)=>x.at-y.at).forEach(d=>dRows.push([dayKey(d.at),hhmm(d.at),d.drug,CLASS[d.drug]||""]));
+  const dRows=[["Date","Time","Drug","Class","Helped"]];
+  live("doses").sort((x,y)=>x.at-y.at).forEach(d=>dRows.push([dayKey(d.at),hhmm(d.at),d.drug,CLASS[d.drug]||"",d.helped||""]));
   const sRows=[["Date","Time","Signs","Note"]];
   live("signals").sort((x,y)=>x.at-y.at).forEach(s=>sRows.push([dayKey(s.at),hhmm(s.at),(s.kinds||[]).join(" / "),s.note||""]));
   return[["attacks.csv",csv(aRows),"text/csv"],["bp-readings.csv",csv(rRows),"text/csv"],

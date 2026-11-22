@@ -30,7 +30,14 @@ chart palette is the one exception, and uses validated non-blue slots.
 
 An append-only event log. One row per thing that happened, never edited.
 Event types: `attack start`, `attack end`, `attack ended, not yet scored`,
-`signal`, `dose`, `reading`.
+`signal`, `dose`, `dose outcome`, `reading`.
+
+`dose outcome` records whether a dose helped. It reuses existing columns on
+purpose, so it needs no change to `Code.gs` and no redeploy: Drug, Drug class,
+Attack ID, **Started** = the timestamp of the dose it refers to, and **Note** =
+`yes` / `partly` / `no`. The app matches it to the dose by drug and time
+(within 2s, as Sheets can round milliseconds); the latest row wins. Never
+re-run `setup()` on a live Sheet to add columns — `sheet()` clears the Log.
 
 Re-scoring an attack appends a *second* `attack end` row for the same
 `Attack ID`. That is deliberate — a correction is a fact too — and the
