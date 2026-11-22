@@ -177,6 +177,19 @@ textarea{min-height:76px;resize:vertical}
   img{max-width:100%}
   [hidden]{display:none!important}
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* dose timers */
+.clock{font-family:var(--mono);font-size:28px;font-weight:500;letter-spacing:.02em;margin:2px 0 14px}
+.clock small{font-size:12px;color:var(--dim-2);margin-left:8px;letter-spacing:0}
+.dl{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-bottom:16px;overflow:hidden}
+.dl-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--line-soft)}
+.dl-row:first-child{border-top:0}
+.dl-n{font-weight:600}
+.dl-s{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.dl-t{font-family:var(--mono);font-size:16px;text-align:right;white-space:nowrap}
+.dl-t small{display:block;font-size:11px;color:var(--dim-2)}
+.dl-t.wait{color:var(--amber)}
+.dl-t.ok{color:var(--sage)}
+.dl-empty{padding:12px 14px;font-size:14px;color:var(--dim-2)}
 </style>
 </head>
 <body>
@@ -468,7 +481,7 @@ function startAttack(){
 
 const sheet=document.getElementById("sheet");
 function openSheet(html){sheet.innerHTML=html;sheet.hidden=false;document.body.style.overflow="hidden";sheet.scrollTop=0}
-function shut(){sheet.hidden=true;sheet.innerHTML="";document.body.style.overflow=""}
+function shut(){if(medTick){clearInterval(medTick);medTick=null}sheet.hidden=true;sheet.innerHTML="";document.body.style.overflow=""}
 function chipRow(name,items,multi){
   return '<div class="chips" data-chips="'+name+'" data-multi="'+(multi?1:0)+'">'+
     items.map(i=>'<button type="button" class="chip" aria-pressed="false" data-v="'+esc(i)+'">'+esc(i)+"</button>").join("")+"</div>";
@@ -496,18 +509,59 @@ function signalSheet(){
     shut();toast("Warning signs logged",()=>drop("signals",r.id));
   };
 }
+// minimum gap between doses, in hours. Only drugs listed here get a countdown;
+// the rest just show time since taken. Add entries as you learn the gaps.
+const GAP_H={"Paracetamol":4,"Sumatriptan":2,"Naratriptan":2};
+let medTick=null;
+function hms(ms){
+  ms=Math.max(0,Math.floor(ms/1000));
+  const h=Math.floor(ms/3600),m=Math.floor(ms%3600/60),x=ms%60;
+  return h+":"+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0");
+}
+function medClockHtml(){
+  const d=new Date();
+  return hhmm(d.getTime())+":"+String(d.getSeconds()).padStart(2,"0")+"<small>"+dmy(d.getTime())+"</small>";
+}
+function medListHtml(){
+  const now=Date.now();
+  const ds=live("doses").filter(d=>now-d.at<24*3600e3).sort((x,y)=>y.at-x.at);
+  if(!ds.length)return '<div class="dl-empty">Nothing taken in the last 24 hours.</div>';
+  return ds.map(d=>{
+    const el=now-d.at,gap=GAP_H[d.drug];
+    let right='<div class="dl-t">'+hms(el)+"<small>since taken</small></div>";
+    if(gap){
+      const left=gap*3600e3-el;
+      right=left>0
+        ?'<div class="dl-t wait">'+hms(left)+"<small>until next OK · "+hhmm(d.at+gap*3600e3)+"</small></div>"
+        :'<div class="dl-t ok">OK to take<small>'+hms(el)+" since taken</small></div>";
+    }
+    return '<div class="dl-row"><div><div class="dl-n">'+esc(d.drug)+'</div><div class="dl-s">taken '+hhmm(d.at)+"</div></div>"+right+"</div>";
+  }).join("");
+}
+function medRefresh(){
+  const c=document.getElementById("medClock"),l=document.getElementById("medList");
+  if(!c||!l){clearInterval(medTick);medTick=null;return}
+  c.innerHTML=medClockHtml();l.innerHTML=medListHtml();
+}
 function medSheet(){
   openSheet('<div class="sheet-h"><h3>Took something</h3><button class="lnk" id="x">Close</button></div>'+
+    '<div class="clock" id="medClock"></div>'+
+    '<div class="dl" id="medList"></div>'+
     '<p class="sheet-note">Counts toward the 30-day medication windows.</p>'+
     '<div class="field"><label>What</label>'+chipRow("drug",MEDS,false)+"</div>"+
     '<div class="actions"><button class="big" id="go">Log it</button></div>');
+  medRefresh();
+  if(medTick)clearInterval(medTick);
+  medTick=setInterval(medRefresh,1000);
   document.getElementById("x").onclick=shut;
   document.getElementById("go").onclick=()=>{
     const d=one("drug");if(!d){toast("Pick one");return}
     const a=openAttack();
     const r=put("doses",{id:uid(),at:Date.now(),drug:d,attackId:a?a.id:null});
     emit({event:"dose",at:r.at,drug:d,drugClass:CLASS[d]||"",attackId:r.attackId||""},r.id);
-    shut();toast(d+" logged",()=>drop("doses",r.id));
+    sheet.querySelectorAll('[data-chips="drug"] .chip').forEach(x=>x.setAttribute("aria-pressed","false"));
+    medRefresh();
+    toast(d+" logged",()=>{drop("doses",r.id);medRefresh()});
   };
 }
 function bpSheet(){
